@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+
+  "name": "iNCognito",
+  "description": "This extension protects against CSRF attacks within Incognito and allows multiple profiles within Incognito",
+  "version": "1.0",
+  "default_locale": "en",
+  "author": "Alex Everett, Tyler Stocksdale",
+  "browser_action": {
+    "default_icon": "icon.png",
+    "default_popup": "incognito.html"
+  },
+  "permissions": [
+    "activeTab",
+    "https://www.ncsu.edu/",
+    "tabs",
+    "cookies"
+  ],
+ "incognito": "split"
+}
