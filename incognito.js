@@ -38,18 +38,23 @@ function reqListener(outgoingHeaders) {
     if (outgoingHeaders!=null){
         var requestURL = outgoingHeaders.url;
         var requestTab = outgoingHeaders.tabId;
-        var cookiesTab = 999;
+        var cookiesTab = 28998;
         var Headers = outgoingHeaders.requestHeaders;
         var cookieArray;
         var tempHeader = "";
-        var foundSeparatorPosition = 999;
-        for (index=0; index<Headers.length; index++) {
-            if (Headers[index].name.toUpperCase()===justcookie) {
+        var foundSeparatorPosition = 28999;
+        var processedHeader = "";
+        var counter = 0;
+        console.log("length=" + Headers.length);
+        for (indexA=0; indexA<Headers.length; indexA++) {
+            if (Headers[indexA].name.toUpperCase()===justcookie) {
                 //call function to inspect and/or modify outbound headers
-                console.log(".");
-                tempHeader = Headers[index].value;
-                Headers[index].value = tabLogic(tempHeader, requestURL, requestTab);
-                console.log(Headers[index].value);
+                console.log("." + counter + "-" + indexA);
+                tempHeader = Headers[indexA].value;
+                processedHeader = tabLogic(tempHeader, requestURL, requestTab);
+                Headers[indexA].value = "" + processedHeader;
+                console.log("tampd->" + processedHeader);
+                counter++;
             }
         }
     }
@@ -58,17 +63,27 @@ function reqListener(outgoingHeaders) {
 
 //function to analyze cookie jar and browser
 function tabLogic(CookieHeaderValue, url, sendingTab ) {
-    var foundSeparatorPosition = 999;
-    var cookiesTab = 999;
+    var foundSeparatorPosition = 30999;
+    var cookiesTab = 30998;
     var cookieArray;
     var tamperedCookieHeaderValue = CookieHeaderValue;
     var tamperedCookieString = "";
     cookieArray = tamperedCookieHeaderValue.split(defaultCookieSeparator);
-    for (index=0; index<cookieArray.length; index++){
-        foundSeparatorPosition = cookieArray[index].indexOf(mySeparator);
+    for (indexB=0; indexB<cookieArray.length; indexB++){
+        foundSeparatorPosition = cookieArray[indexB].indexOf(mySeparator);
         if (foundSeparatorPosition>=0){
-            
+            cookiesTab=parseInt(cookieArray[indexB].substring(0,foundSeparatorPosition),10);
+            console.log("ctab=" + cookiesTab + "; actab=" + sendingTab);
+            if (cookiesTab==sendingTab) { //cookies were set in the same tab we are in
+                tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator;
+            }
+            else {
+                tamperedCookieString = tamperedCookieString;
+            }
+        }
+        else {
+            tamperedCookieString = tamperedCookieString + cookieArray[indexB] + defaultCookieSeparator;
         }
     }
-    return tamperedCookieString
+    return tamperedCookieString;
 }
