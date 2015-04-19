@@ -1,32 +1,71 @@
-//listen for network responses
-chrome.webRequest.onHeadersReceived.addListener(listener,{ urls: ["<all_urls>"]}, ["blocking", "responseHeaders"]);
-var secretKey = 45;
-var setcookie = "SET-COOKIE";
-//function to blah
-function listener(incomingHeaders) {
+//give cache a flush
+chrome.webRequest.handlerBehaviorChanged();
+
+//listen for network responses that contain headers
+chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls>"]}, ["blocking", "responseHeaders"]);
+
+//listen for network requests that contain headers
+chrome.webRequest.onBeforeSendHeaders.addListener(reqListener,{ urls: ["<all_urls>"]}, ["blocking", "requestHeaders"]);
+
+//set global variables
+const secretKey = 45;
+const setcookie = "SET-COOKIE";
+const justcookie = "COOKIE";
+const mySeparator = "::[p]";
+const defaultCookieSeparator = ";";
+
+//function to mark incoming cookie names with tab number
+//would prefer if an API to create a cookie store was available
+function recvListener(incomingHeaders) {
     if (incomingHeaders!=null){
         var requestURL = incomingHeaders.url;
         var requestTab = incomingHeaders.tabId;
         var Headers = incomingHeaders.responseHeaders;
-        var valueArray;
-        var temp;
-        var path_found = false;
         for (index=0; index<Headers.length; index++) {
             if (Headers[index].name.toUpperCase()===setcookie) {
-              console.log(Headers[index]);
-              valueArray = Headers[index].value.split(";");
-                for (indexA=0; indexA<valueArray.length; indexA++){
-                    temp = valueArray[indexA].toUpperCase();
-                    temp = temp.trim();
-                    temp = temp.substring(0,4);
-                    if (temp === "PATH=") {path_found=true;valueArray[indexA].replace("=","=/"+requestTab)}
-                }
-                if (!path_found) {valueArray[indexA]="path=/"+requestTab;}
-              Headers[index].value=Headers[index].value.replace("path=/", "path=/1/");
-              console.log(Headers[index]);
-              console.log("true");
+               console.log(Headers[index]);
+               Headers[index].value = requestTab + mySeparator + Headers[index].value;
+               console.log(Headers[index]);
             }
         }
     }
     return {responseHeaders: Headers};
+}
+
+//function to strip tab number where appropriate from cookies
+function reqListener(outgoingHeaders) {
+    var tabPosition = 0;
+    if (outgoingHeaders!=null){
+        var requestURL = outgoingHeaders.url;
+        var requestTab = outgoingHeaders.tabId;
+        var cookiesTab = 999;
+        var Headers = outgoingHeaders.requestHeaders;
+        var cookieArray;
+        var foundSeparatorPosition = 999;
+        for (index=0; index<Headers.length; index++) {
+            if (Headers[index].name.toUpperCase()===justcookie) {
+                //call function to inspect and/or modify outbound headers
+                Headers[index].value = tabLogic(Headers[index].value, requestURL, requestTab);
+            }
+        }
+    }
+    return {requestHeaders: Headers};
+}
+
+//function to analyze cookie jar and browser
+function tabLogic(CookieHeaderValue, url, sendingTab ) {
+    var foundSeparatorPosition = 999;
+    var cookiesTab = 999;
+    var cookieArray;
+    
+    cookieArray = CookieHeaderValue.split(defaultCookieSeparator);
+    for (index=0; index<cookieArray.length; index++){
+        foundSeparatorPosition = cookieArray[index].indexOf(mySeparator);
+        console.log(foundSeparatorPosition + "+");
+        if (foundSeparatorPosition>=0) {
+            //call function to determine if we strip markers from Headers
+            console.log(cookieArray[indexA].substring(foundSeparatorPosition+5));
+        }
+    }
+ return "test";
 }
