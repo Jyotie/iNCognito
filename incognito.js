@@ -41,11 +41,15 @@ function reqListener(outgoingHeaders) {
         var cookiesTab = 999;
         var Headers = outgoingHeaders.requestHeaders;
         var cookieArray;
+        var tempHeader = "";
         var foundSeparatorPosition = 999;
         for (index=0; index<Headers.length; index++) {
             if (Headers[index].name.toUpperCase()===justcookie) {
                 //call function to inspect and/or modify outbound headers
-                Headers[index].value = tabLogic(Headers[index].value, requestURL, requestTab);
+                console.log(".");
+                tempHeader = Headers[index].value;
+                Headers[index].value = tabLogic(tempHeader, requestURL, requestTab);
+                console.log(Headers[index].value);
             }
         }
     }
@@ -57,15 +61,14 @@ function tabLogic(CookieHeaderValue, url, sendingTab ) {
     var foundSeparatorPosition = 999;
     var cookiesTab = 999;
     var cookieArray;
-    
-    cookieArray = CookieHeaderValue.split(defaultCookieSeparator);
+    var tamperedCookieHeaderValue = CookieHeaderValue;
+    var tamperedCookieString = "";
+    cookieArray = tamperedCookieHeaderValue.split(defaultCookieSeparator);
     for (index=0; index<cookieArray.length; index++){
         foundSeparatorPosition = cookieArray[index].indexOf(mySeparator);
-        console.log(foundSeparatorPosition + "+");
-        if (foundSeparatorPosition>=0) {
-            //call function to determine if we strip markers from Headers
-            console.log(cookieArray[indexA].substring(foundSeparatorPosition+5));
+        if (foundSeparatorPosition>=0){
+            
         }
     }
- return "test";
+    return tamperedCookieString
 }
