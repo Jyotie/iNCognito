@@ -19,9 +19,10 @@
     "cookies",
     "background",
     "webRequest",
+	"webNavigation",
     "webRequestBlocking"
   ],
     "background": {
-        "scripts": ["incognito.js"]
+        "scripts": ["incognito.js", "purl.js"]
     }
 }

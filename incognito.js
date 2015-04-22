@@ -1,10 +1,20 @@
 //global variables
 var counter = 0;
 var focusTab = new Array();
+const secretKey = 45;
+const setcookie = "SET-COOKIE";
+const justcookie = "COOKIE";
+const mySeparator = "::[p]";
+const defaultCookieSeparator = ";";
 
-//find when a tab is created
+//give cache a flush
+chrome.webRequest.handlerBehaviorChanged();
+
+//listen for when a tab is created
 chrome.tabs.onCreated.addListener(function (newTab){
     console.log("------created:" + newTab.Id + "->" + newTab.url);
+	
+	//sets badge icon to tab's ID
     chrome.tabs.query(function(tabObjectsA) {
         
         for(var countA=0; countA<tabObjectsA.length; countA++) {
@@ -17,12 +27,19 @@ chrome.tabs.onCreated.addListener(function (newTab){
             }
         }
     });
+	
+	//need to see how tab was created and decide whether to copy cookies
+	
 });
 
-//find when a tab is updated
+//listen for when a tab is updated
 chrome.tabs.onUpdated.addListener(function (tabint, changeinfo, updTab){
-    console.log("------updated:" + tabint + "->" + changeinfo.url);
-    chrome.tabs.query({active: true, lastFocusedWindow: true}, function(tabObjectsB) {
+    if(changeinfo.url != null) {
+		console.log("------updated:" + tabint + "->" + changeinfo.url);
+	}
+    
+	//sets badge icon to tab's ID
+	chrome.tabs.query({active: true, lastFocusedWindow: true}, function(tabObjectsB) {
         var thisTabB = new Array();
         for(var countC=0; countC<tabObjectsB.length; countC++) {
             thisTabB[countC] = tabObjectsB[countC];
@@ -34,11 +51,19 @@ chrome.tabs.onUpdated.addListener(function (tabint, changeinfo, updTab){
             }
         }
     });
+	
+	//if URL domain has changed, then clear cookies
+	if (0){//URL domain has changed) {
+		clearTabsCookies(tabint);
+	}
+	
 });
 
-//find when a tab is activated
+//listen for when a tab is activated
 chrome.tabs.onActivated.addListener(function (activTab){
     console.log("------activated:" + activTab.tabId);
+	
+	//sets badge icon to tab's ID
     chrome.tabs.query({active: true, lastFocusedWindow: true}, function(tabObjectsC) {
         for(var countE=0; countE<tabObjectsC.length; countE++) {
             focusTab[countE] = tabObjectsC[countE];
@@ -52,8 +77,45 @@ chrome.tabs.onActivated.addListener(function (activTab){
     });
 });
 
-//give cache a flush
-chrome.webRequest.handlerBehaviorChanged();
+//listen for when a tab is removed and remove it's cookies
+chrome.tabs.onRemoved.addListener(function removedListener(tabId, removeInfo) {
+	clearTabsCookies(tabId);
+	console.log("------removed:" + tabId);
+});
+
+//listen for when a tab is given a new ID
+chrome.tabs.onReplaced.addListener(function replaceListener(addedTabId, removedTabId) {
+	console.log("------replaced:" + removedTabId + "->" + addedTabId);
+	replaceTabsCookies(addedTabId, removedTabId);
+});
+
+//listen for a new tab is created to host a navigation
+chrome.webNavigation.onCreatedNavigationTarget.addListener(function createNavListener(details) {
+	chrome.tabs.get(details.sourceTabId, function(tab) {
+		console.log("------old url: " + tab.url);
+		console.log("------new url: " + details.url);
+		var oldArray = purl(tab.url).attr('host').split(".");
+		var newArray = purl(details.url).attr('host').split(".");
+		var oldhost = oldArray[oldArray.length-2];
+		var newhost = newArray[newArray.length-2];
+		console.log("------old url host: " + oldhost);
+		console.log("------new url host: " + newhost);
+		if(oldhost == newhost) {
+			console.log("------cookies copied:" + details.sourceTabId + "->" + details.tabId);
+			duplicateTabsCookies(details.tabId, details.sourceTabId, tab.url);
+		}
+		
+	});
+});
+
+//listen for when a navigation starts
+/*chrome.webNavigation.onBeforeNavigate.addListener(function beforeNavListener(details) {
+	chrome.tabs.get(details.tabId, function(tab) {
+		console.log("------before:" + tab.url);
+		console.log("------after :" + details.url);
+	});
+});
+*/
 
 //listen for network responses that contain headers
 chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls>"]}, ["blocking", "responseHeaders"]);
@@ -61,12 +123,7 @@ chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls
 //listen for network requests that contain headers
 chrome.webRequest.onBeforeSendHeaders.addListener(reqListener,{ urls: ["<all_urls>"]}, ["blocking", "requestHeaders"]);
 
-//set global variables
-const secretKey = 45;
-const setcookie = "SET-COOKIE";
-const justcookie = "COOKIE";
-const mySeparator = "::[p]";
-const defaultCookieSeparator = ";";
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 //function to mark incoming cookie names with tab number
 //would prefer if an API to create a cookie store was available
@@ -76,7 +133,7 @@ function recvListener(incomingHeaders) {
         var requestTab = incomingHeaders.tabId;
         var Headers = incomingHeaders.responseHeaders;
         for (index=0; index<Headers.length; index++) {
-            if (Headers[index].name.toUpperCase()===setcookie) {
+            if (Headers[index].name.toUpperCase()===setcookie && requestTab != -1) {
                console.log("inctab=" + requestTab);
                Headers[index].value = requestTab + mySeparator + Headers[index].value;
                console.log(Headers[index]);
@@ -138,4 +195,43 @@ function tabLogic(CookieHeaderValue, url, sendingTab ) {
     }
     tamperedCookieString = tamperedCookieString.substring(0,tamperedCookieString.length-1)  //subtract trailing semi-colon
     return tamperedCookieString;
+}
+
+//function to delete all cookies from tab "tabID"
+//deletes any cookie with name that starts with tabId::[p]
+function clearTabsCookies(tabId) {
+	chrome.cookies.getAll({}, function(cookies) {
+		for (var i in cookies) {
+			if (cookies[i].name.indexOf(tabId + mySeparator) == 0) {
+				removeCookie(cookies[i]);
+			}
+		}
+	});
+}
+
+//function to replace tab # prefix on cookies
+function replaceTabsCookies(newTab, oldTab) {
+	chrome.cookies.getAll({}, function(cookies) {
+		for (var i in cookies) {
+			if (cookies[i].name.indexOf(oldTab + mySeparator) == 0) {
+				var separatorPosition = cookies[i].name.indexOf(mySeparator);
+				console.log("Old cookie name: " + cookies[i].name);
+				cookies[i].name = newTab + cookies[i].name.substring(separatorPosition);
+				console.log("New cookie name: " + cookies[i].name);
+			}
+		}
+	});
+}
+
+//function to duplicate cookies for new tab #
+function duplicateTabsCookies(newTab, oldTab, url) {
+	chrome.cookies.getAll({}, function(cookies) {
+		for (var i in cookies) {
+			if (cookies[i].name.indexOf(oldTab + mySeparator) == 0) {
+				var separatorPosition = cookies[i].name.indexOf(mySeparator);
+				var name = newTab + cookies[i].name.substring(separatorPosition);
+				chrome.cookies.set({url:url, name:name, value:cookies[i].value, domain:cookies[i].domain, path:cookies[i].path, secure:cookies[i].secure, httpOnly:cookies[i].httpOnly, expirationDate:cookies[i].expirationDate, storeId:cookies[i].storeId});
+			}
+		}
+	});
 }
