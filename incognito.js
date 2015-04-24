@@ -79,6 +79,24 @@ chrome.tabs.onReplaced.addListener(function (replaced, original){
     });
 });
 
+//find when a tab is remove
+chrome.tabs.onRemoved.addListener(function (remTab, myobjects){
+    console.log("------removed:" + remTab);
+    chrome.tabs.query({active: true, lastFocusedWindow: true}, function(tabObjectsE) {
+        for(var countAA=0; countAA<tabObjectsE.length; countAA++) {
+            focusTab[countAA] = tabObjectsE[countAA];
+        }
+        for (var countBB=0; countBB<focusTab.length; countBB++){
+            if(focusTab[countBB]!=null) {
+                lastActiveTab = focusTab[countBB].id;
+                var badgecontentsG = {text: "" + focusTab[countBB].id};
+                chrome.browserAction.setBadgeText(badgecontentsG);
+            }
+        }
+    });
+    migrate(-1,remTab);
+});
+
 //check for sneaky javascript cookies
 chrome.cookies.onChanged.addListener(updateCookieStore);
 
@@ -86,7 +104,7 @@ chrome.cookies.onChanged.addListener(updateCookieStore);
 chrome.webRequest.handlerBehaviorChanged();
 
 //listen for network responses that contain headers
-chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls>"]}, ["blocking", "responseHeaders"]);
+//chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls>"]}, ["blocking", "responseHeaders"]);
 
 //listen for network requests that contain headers
 chrome.webRequest.onBeforeSendHeaders.addListener(reqListener,{ urls: ["<all_urls>"]}, ["blocking", "requestHeaders"]);
@@ -130,7 +148,7 @@ function reqListener(outgoingHeaders) {
                 //console.log("pre ==" + processedHeader);
                 processedHeader = tabLogic(tempHeader, requestURL, requestTab);
                 Headers[indexA].value = "" + processedHeader;
-                console.log("tampered ==" + processedHeader);
+                console.log(requestURL + "->tampered->" + processedHeader);
             }
         }
     }
@@ -158,10 +176,42 @@ function tabLogic(CookieHeaderValue, url, sendingTab ) {
             }
         }
         else {
-            tamperedCookieString = tamperedCookieString; //do include unmarked cookies
+            tamperedCookieString = tamperedCookieString + cookieArray[indexB] + defaultCookieSeparator; //do include unmarked cookies
         }
     }
-    tamperedCookieString = tamperedCookieString.substring(0,tamperedCookieString.length-1)  //subtract trailing semi-colon
+    if (tamperedCookieString.charAt(tamperedCookieString.length-1)===";") {
+        tamperedCookieString = tamperedCookieString.substring(0,tamperedCookieString.length-1)  //subtract trailing semi-colon
+        //console.log("removed semicolon");
+    }
+    return tamperedCookieString;
+}
+
+//function to analyze cookie jar and browser
+function tabLogicTest(CookieHeaderValue, url, sendingTab ) {
+    var foundSeparatorPosition = 30999;
+    var cookiesTab = 30998;
+    var cookieArray;
+    var tamperedCookieHeaderValue = CookieHeaderValue;
+    var tamperedCookieString = "";
+    cookieArray = tamperedCookieHeaderValue.split(defaultCookieSeparator);
+    for (indexB=0; indexB<cookieArray.length; indexB++){
+        foundSeparatorPosition = cookieArray[indexB].indexOf(mySeparator);
+        if (foundSeparatorPosition>=0){
+            //cookiesTab=parseInt(cookieArray[indexB].substring(0,foundSeparatorPosition),10);
+            //console.log("ctab=" + cookiesTab + "; actab=" + sendingTab + "; " + cookieArray[indexB]);
+            if (foundSeparatorPosition>0) {tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(0,foundSeparatorPosition) + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator; }
+            else {tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator; }
+                
+        }
+        else {
+            tamperedCookieString = tamperedCookieString + cookieArray[indexB] + defaultCookieSeparator; //do include unmarked cookies
+        }
+    }
+    if (tamperedCookieString.charAt(tamperedCookieString.length-1)===";") {
+        tamperedCookieString = tamperedCookieString.substring(0,tamperedCookieString.length-1)  //subtract trailing semi-colon
+        //console.log("removed semicolon");
+    }
+    
     //console.log("sent:" + tamperedCookieString);
     return tamperedCookieString;
 }
@@ -174,8 +224,8 @@ function updateCookieStore(changedata){
     var updCookieDomain = updCookie.domain;
     var updCookieExpiry = updCookie.expirationDate;
     var updCookiePath = updCookie.path;
-    var updCookieHTTP = false;
-    var updCookieSecure = false;
+    var updCookieHTTP = updCookie.httpOnly;
+    var updCookieSecure = updCookie.secure;
     var separatorLocation = 56022;
     var separatorMarker = 40294;
     var sameDomainTab = new Array(); //array of tabs matched
@@ -189,17 +239,27 @@ function updateCookieStore(changedata){
     if (updCookieExpiry==null) updCookieExpiry=1499668630; //some future date
     if (updCookieDomain==null) console.log("null domain");
     separatorLocation = updCookieName.indexOf(mySeparator);
-    if (separatorLocation>=0){
+    if (separatorLocation>=0 && 1==2){
         //console.log("found sep");
         //nothing to do
     }
     else {
         console.log("JS cookie?:" + updCookieName + " dom:" + updCookieDomain);
         //determine if we have cookies from same domain with markers
-        if (true) { //delete JS cookies
-            chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
-            chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+        updCookieHTTP=true;
+        if (updCookieHTTP) { //delete JS cookies
+            //change cookie name and store
+            separatorLocation = updCookieName.indexOf(mySeparator);
+            if (separatorLocation>=0) {  }
+            else {
+                chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP});
+                chrome.cookies.set({url: "http://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP});
+            }
         }
+        
+        /*
         if (cookieCache!=null){
             for(alpha=0; alpha<cookieCache.length;alpha++){
                 separatorMarker = cookieCache[alpha].name.indexOf(mySeparator);
@@ -224,6 +284,7 @@ function updateCookieStore(changedata){
             }
             //ready to set cookie with the tab number
             if (sameDomainTab.length>0 && sameNameTab.length>0){
+                console.log("2 for loops");
                 for(countM=0; countM<sameDomainTab.length;countM++){
                     for(countN=0; countN<sameNameTab.length;countN++){
                         if (sameDomainTab[countM]==sameNameTab[countN]) {
@@ -235,29 +296,34 @@ function updateCookieStore(changedata){
             //set cookie if no name match to first domain entry
             if (sameNameTab.length==0 && sameDomainTab.length>0) {
                 successVal = 0;
-                console.log("no name matched, setting " + sameDomainTab[0] + mySeparator + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);
-                successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + sameDomainTab[0] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
+                //fix make sure tab exists
+                console.log("no name matched, setting after deleting" + lastActiveTab + mySeparator + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);
+                chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + sameDomainTab[0] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie1"); return 2;});
                 if (successVal>1) {console.log("Error with " + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);}
             }
             else if (sameDomainTab.length==0) {
                 //no matching domains for cookies found, save to activeTabId or discard???
                 successVal = 0;
-                console.log("no domains matched" + lastActiveTab + mySeparator + updCookieName +updCookieValue);
-                successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return -1;});
+                console.log("no domains matched, setting after deleting" + lastActiveTab + mySeparator + updCookieName +updCookieValue);
+                 chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                 chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie2"); return -1;});
                     if (successVal>1) {console.log("Error with " + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);}
             }
             else {
-                if (sameNameTab.length==0){ //unsure which tab it belongs to, set it to first domain match tabId
+                if (sameNameTab.length==0){ //unsure which tab it belongs to, set it to first domain match tabId or activeTab
                     successVal = 0;
-                    console.log("domain match, no name match"); // matched a domain
-                    successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + sameDomainTab[0] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
+                    console.log("domain match, no name match, activeTab" + lastActiveTab); // matched a domain
+                    successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie3"); return 2;});
                     if (successVal>1) {console.log("Error with " + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);}
                 }
                 else {
                     //cookie found in multiple tabs, update most likely
+                    console.log("whew!");
                     for(countP=0;countP<sameNameTab.length;countP++){
-                       if (sameNameTab[countP].length>0){
-                        console.log("whew!" + sameNameTab[countP]);
+                       if (sameNameTab[countP]>=0){//fix check
                         //set cookie to this tab
                            successVal = 0;
                            successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + sameNameTab[countP] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
@@ -268,6 +334,7 @@ function updateCookieStore(changedata){
             }
         }
         else {console.log("cookie cache empty.");}
+        */
     }
     chrome.cookies.getAll({},cookieChecker);
 }
@@ -277,25 +344,34 @@ function cookieChecker(myArray){
     cookieCache = myArray;
 }
 
+function callback(tabObjectG){
+    if(chrome.runtime.lastError) {console.log("tab doesnt exist:");};
+}
+
 //function to move cookies to new tabId
 function migrate (newID, oldID) {
     var cookieTabValue=93532;
     var cookieTabValueString = "";
     var separatorPlace=0;
     var thisSuccess;
+    chrome.cookies.getAll({},cookieChecker);
     for(countQ=0; countQ<cookieCache.length; countQ++){
         thisSuccess=0;
         separatorPlace = cookieCache[countQ].name.indexOf(mySeparator);
         if (separatorPlace>=0) {
             cookieTabValueString = cookieCache[countQ].name.substring(0,separatorPlace);
             cookieTabValue = parseInt(cookieTabValueString);
-            console.log("z" + cookieTabValue + "x" + separatorPlace);
+            //console.log("z" + cookieTabValue + "x" + separatorPlace);
+            //try to find missing tabs
+            chrome.tabs.get(cookieTabValue, callback);
+                //if(chrome.runtime.lastError) {console.log("tab doesnt exist:" + cookieTabValue);};
             if (cookieTabValue==oldID) {
-                console.log("Need to migrate me" + oldID + " to " + newID);
+                console.log("Need to migrate me" + cookieCache[countQ].name + oldID + " to " + newID);
                 chrome.cookies.remove({url: "https://" + cookieCache[countQ].domain + cookieCache[countQ].path, name: "" + cookieCache[countQ].name});
-                thisSuccess = chrome.cookies.set({url: "https://"+cookieCache[countQ].domain, name: "" + newID + mySeparator + cookieCache[countQ].name, value: "" + cookieCache[countQ].value, domain: "" + cookieCache[countQ].domain, path: "" + cookieCache[countQ].path, expirationDate: cookieCache[countQ].expirationDate,secure: cookieCache[countQ].secure, httpOnly: cookieCache[countQ].httpOnly},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
+                if(newID>=0){
+                    thisSuccess = chrome.cookies.set({url: "https://"+cookieCache[countQ].domain, name: "" + newID + mySeparator + cookieCache[countQ].name, value: "" + cookieCache[countQ].value, domain: "" + cookieCache[countQ].domain, path: "" + cookieCache[countQ].path, expirationDate: cookieCache[countQ].expirationDate,secure: cookieCache[countQ].secure, httpOnly: cookieCache[countQ].httpOnly},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
                 if (thisSuccess>1) {console.log("Error with " + cookieCache[countQ].domain + " " + cookieCache[countQ].name);}
-                
+                }
             }
         }
     }
