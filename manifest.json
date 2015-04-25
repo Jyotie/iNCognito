@@ -1,9 +1,9 @@
 {
   "manifest_version": 2,
 
-  "name": "iNCognito",
+  "name": "NC-Surf",
   "description": "This extension virtually isolates cookies allowing for different tags to have accounts logged in with different users. It also protects against CSRF attacks by denying requests from unrelated tabs.",
-  "version": "1.0.40",
+  "version": "1.1",
   "default_locale": "en",
   "author": "Alex Everett, Tyler Stocksdale of NCSU",
   "icons": { "16": "small_icon.png", "48": "medium_icon.png", "128": "large_icon.png" },

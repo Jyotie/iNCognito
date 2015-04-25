@@ -2,7 +2,7 @@
 const secretKey = 45;
 const setcookie = "SET-COOKIE";
 const justcookie = "COOKIE";
-const mySeparator = "BZPPf";
+const mySeparator = "[0A:z";
 const defaultCookieSeparator = ";";
 var counter = 0;
 var focusTab = new Array();
@@ -104,7 +104,7 @@ chrome.cookies.onChanged.addListener(updateCookieStore);
 chrome.webRequest.handlerBehaviorChanged();
 
 //listen for network responses that contain headers
-//chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls>"]}, ["blocking", "responseHeaders"]);
+chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls>"]}, ["blocking", "responseHeaders"]);
 
 //listen for network requests that contain headers
 chrome.webRequest.onBeforeSendHeaders.addListener(reqListener,{ urls: ["<all_urls>"]}, ["blocking", "requestHeaders"]);
@@ -116,13 +116,16 @@ function recvListener(incomingHeaders) {
         var requestURL = incomingHeaders.url;
         var requestTab = incomingHeaders.tabId;
         var Headers = incomingHeaders.responseHeaders;
+        var theEqualLocation = 0;
         for (index=0; index<Headers.length; index++) {
             if (Headers[index].name.toUpperCase()===setcookie) {
                console.log("inctab=" + requestTab);
-                if (requestTab>=0){  //dont mark -1 labeled tabs
-                    Headers[index].value = requestTab + mySeparator + Headers[index].value;
+                if (requestTab>=0||1==1){  //dont mark -1 labeled tabs
+                    theEqualLocation = Headers[index].value.indexOf("=");
+                    Headers[index].value = requestTab + mySeparator + Headers[index].value; //modify cookie name
+                    //Headers[index].value = Headers[index].value.substring(0,(theEqualLocation+1)) + requestTab + mySeparator + Headers[index].value.substring((theEqualLocation+1)); //modify cookie value
                 }
-               console.log(Headers[index]);
+               //console.log(Headers[index]);
             }
         }
     }
@@ -141,6 +144,7 @@ function reqListener(outgoingHeaders) {
         var tempHeader = "";
         var foundSeparatorPosition = 28999;
         var processedHeader = "";
+        var splicepoint = 9999;
         for (indexA=0; indexA<Headers.length; indexA++) {
             if (Headers[indexA].name.toUpperCase()===justcookie) {
                 tempHeader = Headers[indexA].value;
@@ -148,73 +152,84 @@ function reqListener(outgoingHeaders) {
                 //console.log("pre ==" + processedHeader);
                 processedHeader = tabLogic(tempHeader, requestURL, requestTab);
                 Headers[indexA].value = "" + processedHeader;
-                console.log(requestURL + "->tampered->" + processedHeader);
+                if (processedHeader.length<2) {
+                    Headers[indexA].value = "";
+                    splicepoint = indexA;
+                }
             }
+        }
+        if (splicepoint<200) Headers.splice(splicepoint,1);
+        for (indexAAA=0;indexAAA<Headers.length;indexAAA++){
+            console.log(Headers[indexAAA].name + Headers[indexAAA].value + "\r\n");
         }
     }
     return {requestHeaders: Headers};
 }
 
 //function to analyze cookie jar and browser
+//used with sending cookies
 function tabLogic(CookieHeaderValue, url, sendingTab ) {
     var foundSeparatorPosition = 30999;
     var cookiesTab = 30998;
     var cookieArray;
     var tamperedCookieHeaderValue = CookieHeaderValue;
     var tamperedCookieString = "";
+    var equalsLocation = 0;
+    var imp;  //handle GMAIL_IMP cookie
+    var tempLocator=0;
+    var tempLocatorA=0;
+    var matchName = false; //whether to modify cookie name or value
     cookieArray = tamperedCookieHeaderValue.split(defaultCookieSeparator);
     for (indexB=0; indexB<cookieArray.length; indexB++){
+        imp=false;
         foundSeparatorPosition = cookieArray[indexB].indexOf(mySeparator);
         if (foundSeparatorPosition>=0){
-            cookiesTab=parseInt(cookieArray[indexB].substring(0,foundSeparatorPosition),10);
-            //console.log("ctab=" + cookiesTab + "; actab=" + sendingTab + "; " + cookieArray[indexB]);
+            equalsLocation = cookieArray[indexB].indexOf("=");
+            if (matchName) {
+                equalsLocation++;
+                 cookiesTab=parseInt(cookieArray[indexB].substring(equalsLocation,foundSeparatorPosition),10);
+            }
+            else
+                cookiesTab=parseInt(cookieArray[indexB].substring(0,foundSeparatorPosition),10);
+            console.log("ctab=" + cookiesTab + "; actab=" + sendingTab + "; " + cookieArray[indexB]);
             if (cookiesTab==sendingTab) { //cookies were set in the same tab we are in
-                tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator;
+                if (matchName)
+                    tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(0,equalsLocation) + cookieArray[indexB].substring((foundSeparatorPosition+5)) + defaultCookieSeparator;
+                else {
+                    if(cookieArray[indexB].substring((foundSeparatorPosition+5),equalsLocation)==="GMAIL_IMP")
+                        imp=true;
+                    if (imp) {
+                        console.log("rewriting imp");
+                        if (cookieArray[indexB].indexOf("badhdr") > 3){
+                            tempLocator=cookieArray[indexB].indexOf("!");
+                            tempLocatorA=cookieArray[indexB].substring(foundSeparatorPosition+5).indexOf("ufp") - 1;
+                            if (tempLocator>0)
+                            tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring((foundSeparatorPosition+5),tempLocator+1) + cookieArray[indexB].substring(tempLocatorA) + defaultCookieSeparator;
+                        }
+                        else {   //dont tamper with GMAIL_IMP
+                           tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator;
+                        }
+                    }
+                    else
+                    tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator;
+                }
             }
             else {
-                tamperedCookieString = tamperedCookieString;
+                tamperedCookieString = tamperedCookieString;  //do NOT include cookies for other tabs
             }
         }
         else {
-            tamperedCookieString = tamperedCookieString + cookieArray[indexB] + defaultCookieSeparator; //do include unmarked cookies
+            tamperedCookieString = tamperedCookieString; //do NOT include unmarked cookies
         }
     }
-    if (tamperedCookieString.charAt(tamperedCookieString.length-1)===";") {
+    if (tamperedCookieString.charAt(tamperedCookieString.length-1)===";" && tamperedCookieString.length>1) {
         tamperedCookieString = tamperedCookieString.substring(0,tamperedCookieString.length-1)  //subtract trailing semi-colon
         //console.log("removed semicolon");
     }
+    if (tamperedCookieString.length<2)  tamperedCookieString="";
     return tamperedCookieString;
 }
 
-//function to analyze cookie jar and browser
-function tabLogicTest(CookieHeaderValue, url, sendingTab ) {
-    var foundSeparatorPosition = 30999;
-    var cookiesTab = 30998;
-    var cookieArray;
-    var tamperedCookieHeaderValue = CookieHeaderValue;
-    var tamperedCookieString = "";
-    cookieArray = tamperedCookieHeaderValue.split(defaultCookieSeparator);
-    for (indexB=0; indexB<cookieArray.length; indexB++){
-        foundSeparatorPosition = cookieArray[indexB].indexOf(mySeparator);
-        if (foundSeparatorPosition>=0){
-            //cookiesTab=parseInt(cookieArray[indexB].substring(0,foundSeparatorPosition),10);
-            //console.log("ctab=" + cookiesTab + "; actab=" + sendingTab + "; " + cookieArray[indexB]);
-            if (foundSeparatorPosition>0) {tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(0,foundSeparatorPosition) + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator; }
-            else {tamperedCookieString = tamperedCookieString + cookieArray[indexB].substring(foundSeparatorPosition+5) + defaultCookieSeparator; }
-                
-        }
-        else {
-            tamperedCookieString = tamperedCookieString + cookieArray[indexB] + defaultCookieSeparator; //do include unmarked cookies
-        }
-    }
-    if (tamperedCookieString.charAt(tamperedCookieString.length-1)===";") {
-        tamperedCookieString = tamperedCookieString.substring(0,tamperedCookieString.length-1)  //subtract trailing semi-colon
-        //console.log("removed semicolon");
-    }
-    
-    //console.log("sent:" + tamperedCookieString);
-    return tamperedCookieString;
-}
 
 //function to handle incoming cookies without tab and marker
 function updateCookieStore(changedata){
@@ -235,31 +250,31 @@ function updateCookieStore(changedata){
     var nameIdMatch = false;
     var firstMatch = 0;
     var successVal;
+    var matchesActive = false;
     if (updCookiePath==null) updCookiePath="/";
     if (updCookieExpiry==null) updCookieExpiry=1499668630; //some future date
     if (updCookieDomain==null) console.log("null domain");
     separatorLocation = updCookieName.indexOf(mySeparator);
-    if (separatorLocation>=0 && 1==2){
+    if (separatorLocation>=0){
         //console.log("found sep");
         //nothing to do
     }
     else {
-        console.log("JS cookie?:" + updCookieName + " dom:" + updCookieDomain);
+        console.log("JS cookie?:" + updCookieName + " dom:" + updCookieDomain + "path:" + updCookiePath);
+        //updCookieHTTP=true; //dont let JS know we modified name
         //determine if we have cookies from same domain with markers
-        updCookieHTTP=true;
-        if (updCookieHTTP) { //delete JS cookies
+        if (true) { //delete JS cookies
             //change cookie name and store
             separatorLocation = updCookieName.indexOf(mySeparator);
             if (separatorLocation>=0) {  }
             else {
-                chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
-                chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
-                chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP});
-                chrome.cookies.set({url: "http://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP});
+                
+                //chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator  + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath + "", expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP});
+                //chrome.cookies.set({url: "http://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath + "", expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP});
             }
         }
         
-        /*
+        
         if (cookieCache!=null){
             for(alpha=0; alpha<cookieCache.length;alpha++){
                 separatorMarker = cookieCache[alpha].name.indexOf(mySeparator);
@@ -293,22 +308,41 @@ function updateCookieStore(changedata){
                     }
                 }
             }
+            console.log("here.");
             //set cookie if no name match to first domain entry
             if (sameNameTab.length==0 && sameDomainTab.length>0) {
                 successVal = 0;
+                matchesActive=false;
+                for(inde=0; index<sameDomainTab.length;inde++) {
+                    if (sameDomainTab[inde]==lastActiveTab) {
+                        matchesActive=true;
+                    }
+                }
                 //fix make sure tab exists
+                //if we match a cookie domain to the active tab, use that, otherwise use first match
                 console.log("no name matched, setting after deleting" + lastActiveTab + mySeparator + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);
+                //delete unmarked cookies
                 chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
                 chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
-                successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + sameDomainTab[0] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie1"); return 2;});
+                if (matchesActive){
+                    successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie1"); return 2;});
+                    successVal = chrome.cookies.set({url: "http://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie1"); return 2;});
+                }
+                else {
+                    successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + sameDomainTab[0] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie1"); return 2;});
+                    successVal = chrome.cookies.set({url: "http://"+updCookieDomain, name: "" + sameDomainTab[0] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie1"); return 2;});
+                }
+                
                 if (successVal>1) {console.log("Error with " + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);}
             }
             else if (sameDomainTab.length==0) {
-                //no matching domains for cookies found, save to activeTabId or discard???
+                //no matching domains for cookies found, save to activeTabId
                 successVal = 0;
                 console.log("no domains matched, setting after deleting" + lastActiveTab + mySeparator + updCookieName +updCookieValue);
-                 chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
-                 chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                //delete unmarked cookies
+                chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie2"); return -1;});
                 successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie2"); return -1;});
                     if (successVal>1) {console.log("Error with " + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);}
             }
@@ -316,6 +350,10 @@ function updateCookieStore(changedata){
                 if (sameNameTab.length==0){ //unsure which tab it belongs to, set it to first domain match tabId or activeTab
                     successVal = 0;
                     console.log("domain match, no name match, activeTab" + lastActiveTab); // matched a domain
+                    //delete unmarked cookies
+                    chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                    chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                    successVal = chrome.cookies.set({url: "http://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie3"); return 2;});
                     successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + lastActiveTab + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie3"); return 2;});
                     if (successVal>1) {console.log("Error with " + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);}
                 }
@@ -326,6 +364,10 @@ function updateCookieStore(changedata){
                        if (sameNameTab[countP]>=0){//fix check
                         //set cookie to this tab
                            successVal = 0;
+                           //delete unmarked cookies
+                           chrome.cookies.remove({url: "https://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                           chrome.cookies.remove({url: "http://" + updCookieDomain + updCookiePath, name: "" + updCookieName});
+                           successVal = chrome.cookies.set({url: "http://"+updCookieDomain, name: "" + sameNameTab[countP] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
                            successVal = chrome.cookies.set({url: "https://"+updCookieDomain, name: "" + sameNameTab[countP] + mySeparator + updCookieName, value: "" + updCookieValue, domain: "" + updCookieDomain, path: "" + updCookiePath, expirationDate: updCookieExpiry,secure: updCookieSecure, httpOnly: updCookieHTTP},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
                            if (successVal>1) {console.log("Error with " + updCookieDomain + " " + updCookieName+ " " + updCookieValue + " " + updCookiePath + " " + updCookieExpiry + " " + updCookieSecure + " " + updCookieHTTP);}
                        }
@@ -334,7 +376,7 @@ function updateCookieStore(changedata){
             }
         }
         else {console.log("cookie cache empty.");}
-        */
+
     }
     chrome.cookies.getAll({},cookieChecker);
 }
@@ -344,8 +386,9 @@ function cookieChecker(myArray){
     cookieCache = myArray;
 }
 
-function callback(tabObjectG){
-    if(chrome.runtime.lastError) {console.log("tab doesnt exist:");};
+function tabCall(tabObjectG){
+    if(chrome.runtime.lastError) console.log("tab doesnt exist:");
+    return 0;
 }
 
 //function to move cookies to new tabId
@@ -363,14 +406,21 @@ function migrate (newID, oldID) {
             cookieTabValue = parseInt(cookieTabValueString);
             //console.log("z" + cookieTabValue + "x" + separatorPlace);
             //try to find missing tabs
-            chrome.tabs.get(cookieTabValue, callback);
-                //if(chrome.runtime.lastError) {console.log("tab doesnt exist:" + cookieTabValue);};
+            if (cookieTabValue>=0)
+                thisSuccess = chrome.tabs.get(cookieTabValue, tabCall);
+            console.log(thisSuccess + "---" + cookieTabValue);
+            if (oldID<0) {   //delete cookies with tabs < 0
+                chrome.cookies.remove({url: "https://" + cookieCache[countQ].domain + cookieCache[countQ].path, name: "" + oldID + mySeparator + cookieCache[countQ].name.indexOf(mySeparator+5)});
+                chrome.cookies.remove({url: "https://" + cookieCache[countQ].domain + cookieCache[countQ].path, name: "" + oldID + mySeparator + cookieCache[countQ].name.indexOf(mySeparator+5)});
+            }
             if (cookieTabValue==oldID) {
                 console.log("Need to migrate me" + cookieCache[countQ].name + oldID + " to " + newID);
                 chrome.cookies.remove({url: "https://" + cookieCache[countQ].domain + cookieCache[countQ].path, name: "" + cookieCache[countQ].name});
-                if(newID>=0){
-                    thisSuccess = chrome.cookies.set({url: "https://"+cookieCache[countQ].domain, name: "" + newID + mySeparator + cookieCache[countQ].name, value: "" + cookieCache[countQ].value, domain: "" + cookieCache[countQ].domain, path: "" + cookieCache[countQ].path, expirationDate: cookieCache[countQ].expirationDate,secure: cookieCache[countQ].secure, httpOnly: cookieCache[countQ].httpOnly},function(cookieSet) {if (cookieSet==null) console.log("unable to set cookie"); return 2;});
-                if (thisSuccess>1) {console.log("Error with " + cookieCache[countQ].domain + " " + cookieCache[countQ].name);}
+                chrome.cookies.remove({url: "http://" + cookieCache[countQ].domain + cookieCache[countQ].path, name: "" + cookieCache[countQ].name});
+                if(newID>=0){  //only migrate tabs with IDs > 0
+                    console.log("migrated");
+                    chrome.cookies.set({url: "https://"+cookieCache[countQ].domain, name: "" + newID + mySeparator + cookieCache[countQ].name.substring(mySeparator+5), value: "" + cookieCache[countQ].value, domain: "" + cookieCache[countQ].domain, path: "" + cookieCache[countQ].path, expirationDate: cookieCache[countQ].expirationDate,secure: cookieCache[countQ].secure, httpOnly: cookieCache[countQ].httpOnly});
+                    chrome.cookies.set({url: "http://"+cookieCache[countQ].domain, name: "" + newID + mySeparator + cookieCache[countQ].name.substring(mySeparator+5), value: "" + cookieCache[countQ].value, domain: "" + cookieCache[countQ].domain, path: "" + cookieCache[countQ].path, expirationDate: cookieCache[countQ].expirationDate,secure: cookieCache[countQ].secure, httpOnly: cookieCache[countQ].httpOnly});
                 }
             }
         }
