@@ -1,3 +1,10 @@
+/*
+ * NC-Surf (A Chrome extension implementing virtual cookie stores) v1.2
+ * Developed and maintanined by aeveret@ncsu.edu and tastocks@ncsu.edu
+ * Source repository: https://github.com/alevere/iNCognito/tree/moretabs
+ * Licensed under an MIT-style license. See license file for details
+ */
+
 //set global variables
 const secretKey = 45;
 const setcookie = "SET-COOKIE";
@@ -8,10 +15,13 @@ var counter = 0;
 var focusTab = new Array();
 var cookieCache = new Array();
 var lastActiveTab;
+var IncognitoTab = false;
+var IncognitoOnly=false;
+var presentlyIncognito=false;
 
 //find when a tab is created
 chrome.tabs.onCreated.addListener(function (newTab){
-    console.log("------created:" + newTab.Id + "->" + newTab.url);
+    console.log("------created:" + newTab.Id + "->" + newTab.url + " " + IncognitoOnly);
     chrome.tabs.query({active: true, lastFocusedWindow: true}, function(tabObjectsA) {
         for(var countA=0; countA<tabObjectsA.length; countA++) {
             focusTab[countA] = tabObjectsA[countA];
@@ -19,6 +29,7 @@ chrome.tabs.onCreated.addListener(function (newTab){
         for (var countB=0; countB<focusTab.length; countB++){
             if(focusTab[countB]!=null) {
                 lastActiveTab = focusTab[countB].id;
+                presentlyIncognito = focusTab[countB].incognito;
                 var badgecontentsA = {text: "" + focusTab[countB].id};
                 chrome.browserAction.setBadgeText(badgecontentsA);
             }
@@ -36,6 +47,7 @@ chrome.tabs.onUpdated.addListener(function (tabint, changeinfo, updTab){
         for (var countD=0; countD<focusTab.length; countD++){
             if(focusTab[countD]!=null) {
                 lastActiveTab = focusTab[countD].id;
+                presentlyIncognito = focusTab[countD].incognito;
                 var badgecontentsB = {text:"" + focusTab[countD].id};
                 chrome.browserAction.setBadgeText(badgecontentsB);
             }
@@ -53,6 +65,7 @@ chrome.tabs.onActivated.addListener(function (activTab){
         for (var countF=0; countF<focusTab.length; countF++){
             if(focusTab[countF]!=null) {
                 lastActiveTab = focusTab[countF].id;
+                presentlyIncognito = focusTab[countF].incognito;
                 var badgecontentsC = {text: "" + focusTab[countF].id};
                 chrome.browserAction.setBadgeText(badgecontentsC);
             }
@@ -72,6 +85,7 @@ chrome.tabs.onReplaced.addListener(function (replaced, original){
         for (var countH=0; countH<focusTab.length; countH++){
             if(focusTab[countH]!=null) {
                 lastActiveTab = focusTab[countH].id;
+                presentlyIncognito = focusTab[countH].incognito;
                 var badgecontentsD = {text: "" + focusTab[countH].id};
                 chrome.browserAction.setBadgeText(badgecontentsD);
             }
@@ -89,6 +103,7 @@ chrome.tabs.onRemoved.addListener(function (remTab, myobjects){
         for (var countBB=0; countBB<focusTab.length; countBB++){
             if(focusTab[countBB]!=null) {
                 lastActiveTab = focusTab[countBB].id;
+                presentlyIncognito = focusTab[countBB].incognito;
                 var badgecontentsG = {text: "" + focusTab[countBB].id};
                 chrome.browserAction.setBadgeText(badgecontentsG);
             }
@@ -96,6 +111,9 @@ chrome.tabs.onRemoved.addListener(function (remTab, myobjects){
     });
     migrate(-1,remTab);
 });
+
+//when our extension is clicked, toggle incognito setting
+chrome.browserAction.onClicked.addListener(clickedIcon);
 
 //check for sneaky javascript cookies
 chrome.cookies.onChanged.addListener(updateCookieStore);
@@ -109,6 +127,25 @@ chrome.webRequest.onHeadersReceived.addListener(recvListener,{ urls: ["<all_urls
 //listen for network requests that contain headers
 chrome.webRequest.onBeforeSendHeaders.addListener(reqListener,{ urls: ["<all_urls>"]}, ["blocking", "requestHeaders"]);
 
+//listen for a new tab is created to host a navigation
+chrome.webNavigation.onCreatedNavigationTarget.addListener(function createNavListener(details) {
+	chrome.tabs.get(details.sourceTabId, function(tab) {
+		console.log("------old url: " + tab.url);
+		console.log("------new url: " + details.url);
+		var oldArray = purl(tab.url).attr('host').split(".");
+		var newArray = purl(details.url).attr('host').split(".");
+		var oldhost = oldArray[oldArray.length-2];
+		var newhost = newArray[newArray.length-2];
+		console.log("------old url host: " + oldhost);
+		console.log("------new url host: " + newhost);
+		if(oldhost == newhost) {
+			console.log("------cookies copied:" + details.sourceTabId + "->" + details.tabId);
+			migrate(details.tabId, details.sourceTabId);
+		}
+		
+	});
+});
+                                                           
 //function to mark incoming cookie names with tab number
 //would prefer if an API to create a cookie store was available
 function recvListener(incomingHeaders) {
@@ -117,6 +154,16 @@ function recvListener(incomingHeaders) {
         var requestTab = incomingHeaders.tabId;
         var Headers = incomingHeaders.responseHeaders;
         var theEqualLocation = 0;
+        //dont modify if only set to operate in incognito and this tab is not
+        if (IncognitoOnly && requestTab>=0){
+            chrome.tabs.get(requestTab, function(tabresult) {
+                if(chrome.runtime.lastError) {}
+                if(tabresult===undefined) return 0;
+                if(tabresult==null) return 0;
+                if (tabresult.incognito) {IncognitoTab=true;}
+                });
+            if (!IncognitoTab) return {responseHeaders: Headers};
+        }
         for (index=0; index<Headers.length; index++) {
             if (Headers[index].name.toUpperCase()===setcookie) {
                console.log("inctab=" + requestTab);
@@ -145,6 +192,16 @@ function reqListener(outgoingHeaders) {
         var foundSeparatorPosition = 28999;
         var processedHeader = "";
         var splicepoint = 9999;
+        //dont modify if only set to operate in incognito and this tab is not
+        if (IncognitoOnly && requestTab>=0){
+            chrome.tabs.get(requestTab, function(tabresult) {
+                            if(chrome.runtime.lastError) {}
+                            if(tabresult===undefined) return 0;
+                            if(tabresult==null) return 0;
+                            if (tabresult.incognito) {IncognitoTab=true;}
+                            });
+            if (!IncognitoTab) return {responseHeaders: Headers};
+        }
         for (indexA=0; indexA<Headers.length; indexA++) {
             if (Headers[indexA].name.toUpperCase()===justcookie) {
                 tempHeader = Headers[indexA].value;
@@ -160,7 +217,7 @@ function reqListener(outgoingHeaders) {
         }
         if (splicepoint<200) Headers.splice(splicepoint,1);
         for (indexAAA=0;indexAAA<Headers.length;indexAAA++){
-            console.log(Headers[indexAAA].name + Headers[indexAAA].value + "\r\n");
+           // console.log(Headers[indexAAA].name + Headers[indexAAA].value + "\r\n");
         }
     }
     return {requestHeaders: Headers};
@@ -251,6 +308,7 @@ function updateCookieStore(changedata){
     var firstMatch = 0;
     var successVal;
     var matchesActive = false;
+    var skip = false;
     if (updCookiePath==null) updCookiePath="/";
     if (updCookieExpiry==null) updCookieExpiry=1499668630; //some future date
     if (updCookieDomain==null) console.log("null domain");
@@ -261,6 +319,11 @@ function updateCookieStore(changedata){
     }
     else {
         console.log("JS cookie?:" + updCookieName + " dom:" + updCookieDomain + "path:" + updCookiePath);
+        thisTabIncognitoD = 0;
+        if (IncognitoOnly){
+            console.log("+")
+            if (presentlyIncognito==false) skip=true;
+        }
         //updCookieHTTP=true; //dont let JS know we modified name
         //determine if we have cookies from same domain with markers
         if (true) { //delete JS cookies
@@ -274,8 +337,8 @@ function updateCookieStore(changedata){
             }
         }
         
-        
-        if (cookieCache!=null){
+        console.log("incog:" + skip);
+        if (cookieCache!=null && !skip){
             for(alpha=0; alpha<cookieCache.length;alpha++){
                 separatorMarker = cookieCache[alpha].name.indexOf(mySeparator);
                 if (separatorMarker>=0){ //only review marked entries
@@ -313,7 +376,7 @@ function updateCookieStore(changedata){
             if (sameNameTab.length==0 && sameDomainTab.length>0) {
                 successVal = 0;
                 matchesActive=false;
-                for(inde=0; index<sameDomainTab.length;inde++) {
+                for(inde=0; inde<sameDomainTab.length;inde++) {
                     if (sameDomainTab[inde]==lastActiveTab) {
                         matchesActive=true;
                     }
@@ -425,4 +488,12 @@ function migrate (newID, oldID) {
             }
         }
     }
+}
+
+//function to handle icon click
+function clickedIcon(atabobj) {
+    if (IncognitoOnly) IncognitoOnly=false;
+    else IncognitoOnly=true;
+    alert("You just toggled whether this only operates in Incognito mode. This icon also shows the current tab number.");
+    chrome.browserAction.setIcon({path: "small_icon_b.png"});
 }
