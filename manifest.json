@@ -2,7 +2,7 @@
   "manifest_version": 2,
 
   "name": "NC-Surf",
-  "description": "This extension virtually isolates cookies allowing for different tags to have accounts logged in with different users. It also protects against CSRF attacks by denying requests from unrelated tabs.",
+  "description": "This extension virtually isolates cookies allowing for multiple users per window and protects against CSRF attacks.",
   "version": "1.2",
   "default_locale": "en",
   "author": "Alex Everett, Tyler Stocksdale of NCSU",
